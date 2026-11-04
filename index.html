@@ -2,41 +2,54 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Training">
+<meta name="theme-color" content="#ffffff">
 <title>Training Note</title>
 <style>
-  :root { --bg:#fff; --fg:#1d1d1f; --muted:#6e6e73; --line:#d2d2d7; --accent:#0a6cff; --card:#f5f5f7; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#1c1c1e; --fg:#f5f5f7; --muted:#98989d; --line:#3a3a3c; --accent:#4c9aff; --card:#2c2c2e; }
-  }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 -apple-system, "Hiragino Sans", sans-serif; }
-  main { max-width:720px; margin:0 auto; padding:16px 16px calc(88px + env(safe-area-inset-bottom)); }
-  nav { position:fixed; left:0; right:0; bottom:0; display:flex; background:var(--bg); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); }
-  nav button { flex:1; border:0; border-radius:0; background:transparent; color:var(--muted); padding:14px 0; }
-  nav button.active { color:var(--accent); font-weight:600; background:transparent; }
-  button, input, select, textarea { font:inherit; font-size:16px; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; min-height:44px; }
-  button { cursor:pointer; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  button.primary#save { width:100%; }
-  select { max-width:100%; }
-  textarea { width:100%; resize:vertical; }
-  .gate { max-width:420px; margin:0 auto; padding:64px 16px; }
-  .gate input { width:100%; margin-bottom:12px; }
-  .gate button { width:100%; }
-  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-  .topbar button { min-height:36px; padding:4px 10px; font-size:14px; }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { font-family:-apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Hiragino Sans', sans-serif; background:#f5f5f7; color:#1c1c1e; min-height:100dvh; }
   [hidden] { display:none !important; }
+
+  .tab-bar { position:fixed; top:0; left:0; right:0; height:calc(48px + env(safe-area-inset-top)); padding-top:env(safe-area-inset-top); display:flex; z-index:100;
+    background:rgba(255,255,255,0.95); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-bottom:1px solid #e5e5ea; }
+  .tab-btn { flex:1; background:none; border:none; border-bottom:3px solid transparent; border-radius:0; min-height:0; padding:0;
+    font-size:0.88rem; font-weight:600; color:#8e8e93; letter-spacing:0.01em; cursor:pointer; transition:color .15s, border-color .15s; }
+  .tab-btn.active { color:#007aff; border-bottom-color:#007aff; }
+
+  .panels { max-width:720px; margin:0 auto; padding:calc(64px + env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom)); }
   .tab { display:none; }
   .tab.active { display:block; }
-  .card { background:var(--card); border-radius:12px; padding:12px; margin-bottom:12px; }
+
+  input, select, textarea, button { font:inherit; font-size:1rem; color:inherit; }
+  input, select, textarea { background:#fff; border:1px solid #d1d1d6; border-radius:10px; padding:12px 14px; min-height:44px; }
+  textarea { width:100%; line-height:1.5; resize:vertical; }
+  textarea:focus, input:focus, select:focus { outline:none; border-color:#007aff; }
+
+  .section-title { font-size:0.72rem; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; }
+  .card { background:#fff; border-radius:12px; padding:12px 14px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
   .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
   .row input[type=number] { width:96px; }
-  .row .set-label { flex:0 0 auto; }
-  .muted { color:var(--muted); font-size:14px; }
-  .status { min-height:1.5em; margin-top:8px; }
-  .status.error { color:#d70015; }
-  details summary { cursor:pointer; color:var(--muted); }
+  .muted { color:#8e8e93; font-size:0.78rem; }
+  .card .muted { margin-top:4px; }
+  .card .date { display:block; font-size:0.72rem; color:#8e8e93; margin-bottom:6px; }
+
+  .pill-btn { padding:7px 14px; min-height:0; border-radius:20px; border:1.5px solid #d1d1d6; background:#fff; font-size:0.88rem; cursor:pointer; }
+  .pill-btn.danger { color:#ff3b30; }
+  .submit-btn { width:100%; padding:14px; margin-top:12px; background:#007aff; color:#fff; border:none; border-radius:12px; font-weight:600; cursor:pointer; transition:opacity .15s; }
+  .submit-btn:active { opacity:0.75; }
+  .link-btn { display:block; margin:24px auto 0; background:none; border:none; color:#8e8e93; font-size:0.85rem; cursor:pointer; }
+
+  .status { font-size:0.85rem; text-align:center; min-height:20px; margin-top:8px; color:#34c759; }
+  .status.error { color:#ff3b30; }
+
+  .gate { max-width:420px; margin:0 auto; padding:72px 16px; display:flex; flex-direction:column; gap:12px; }
+  .gate h1 { font-size:1.3rem; }
+  .gate p { font-size:0.9rem; color:#636366; line-height:1.5; }
+  .gate input { width:100%; }
+  .gate .submit-btn { margin-top:0; }
 </style>
 </head>
 <body>
@@ -44,30 +57,28 @@
   <h1>Training Note</h1>
   <p class="muted">GitHubのtokenを入力してください。このrepoのContents(Read and write)だけを許可したfine-grained tokenです。この端末のブラウザにだけ保存されます。</p>
   <input id="token-input" type="password" placeholder="github_pat_..." autocomplete="off">
-  <button id="token-connect" class="primary">接続</button>
+  <button id="token-connect" class="submit-btn">接続</button>
   <div id="gate-status" class="status"></div>
 </section>
 
-<main id="app" hidden>
-  <div class="topbar">
-    <strong>Training Note</strong>
-    <button id="token-clear">ログアウト</button>
-  </div>
-  <nav>
-    <button data-tab="form" class="active">記録</button>
-    <button data-tab="history">履歴</button>
-    <button data-tab="chart">推移</button>
+<div id="app" hidden>
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-tab="form">Form</button>
+    <button class="tab-btn" data-tab="history">History</button>
+    <button class="tab-btn" data-tab="chart">Chart</button>
   </nav>
+  <main class="panels">
 
   <section id="tab-form" class="tab active">
     <div class="row">
       <input id="date" type="date">
     </div>
     <div id="exercise-blocks"></div>
-    <button id="add-exercise">＋ 種目を追加</button>
+    <button id="add-exercise" class="pill-btn">＋ 種目を追加</button>
     <p><textarea id="day-note" rows="3" placeholder="その日のメモ"></textarea></p>
-    <button id="save" class="primary">保存</button>
+    <button id="save" class="submit-btn">保存</button>
     <div id="form-status" class="status"></div>
+    <button id="token-clear" class="link-btn">ログアウト</button>
   </section>
 
   <section id="tab-history" class="tab">
@@ -90,6 +101,7 @@
     <canvas id="chart-canvas"></canvas>
   </section>
 </main>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
@@ -217,7 +229,7 @@ function setRowHtml(kg = "", reps = "") {
   return `<div class="row set">
     <input type="number" class="kg" step="0.5" inputmode="decimal" placeholder="kg" value="${kg}">
     <input type="number" class="reps" inputmode="numeric" placeholder="回数" value="${reps}">
-    <button type="button" class="remove-set">×</button>
+    <button type="button" class="pill-btn danger remove-set">×</button>
   </div>`;
 }
 function addSetRow(block, copyLast) {
@@ -231,9 +243,9 @@ function addExerciseBlock() {
   const block = document.createElement("div");
   block.className = "card exercise";
   block.innerHTML = `
-    <div class="row">${exerciseSelectHtml()}<button type="button" class="remove-ex">削除</button></div>
+    <div class="row">${exerciseSelectHtml()}<button type="button" class="pill-btn danger remove-ex">削除</button></div>
     <div class="sets"></div>
-    <div class="row"><button type="button" class="add-set">＋ セット</button></div>
+    <div class="row"><button type="button" class="pill-btn add-set">＋ セット</button></div>
     <textarea class="ex-note" rows="2" placeholder="種目メモ(意識したこと等)"></textarea>`;
   $("exercise-blocks").appendChild(block);
   addSetRow(block, false);
@@ -294,7 +306,7 @@ function renderHistory() {
     const exercises = entry.exercises.filter(x => !filter || x.name === filter);
     if (filter && !exercises.length) return "";
     const rows = exercises.map(x => `<div><strong>${x.name}</strong> ${formatSets(x.sets)}${x.note ? `<div class="muted">${x.note}</div>` : ""}</div>`).join("");
-    return `<div class="card"><div class="muted">${entry.date}</div>${rows}${entry.note ? `<div class="muted">${entry.note}</div>` : ""}</div>`;
+    return `<div class="card"><span class="date">${entry.date}</span>${rows}${entry.note ? `<div class="muted">${entry.note}</div>` : ""}</div>`;
   }).join("") || `<p class="muted">記録がありません</p>`;
 }
 
@@ -327,11 +339,11 @@ async function loadData() {
   renderChart();
 }
 function showTab(name) {
-  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === `tab-${name}`));
 }
 
-document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
+document.querySelectorAll(".tab-btn").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
 $("add-exercise").addEventListener("click", addExerciseBlock);
 $("save").addEventListener("click", saveForm);
 $("token-connect").addEventListener("click", connectWithToken);
