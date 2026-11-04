@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training Note</title>
+<style>
+  :root { --bg:#fff; --fg:#1d1d1f; --muted:#6e6e73; --line:#d2d2d7; --accent:#0a6cff; --card:#f5f5f7; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1c1c1e; --fg:#f5f5f7; --muted:#98989d; --line:#3a3a3c; --accent:#4c9aff; --card:#2c2c2e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 -apple-system, "Hiragino Sans", sans-serif; }
+  main { max-width:720px; margin:0 auto; padding:16px; }
+  nav { display:flex; gap:8px; margin-bottom:16px; }
+  nav button { flex:1; }
+  button, input, select, textarea { font:inherit; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  button { cursor:pointer; }
+  button.active, button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  textarea { width:100%; resize:vertical; }
+  .tab { display:none; }
+  .tab.active { display:block; }
+  .card { background:var(--card); border-radius:12px; padding:12px; margin-bottom:12px; }
+  .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
+  .row input[type=number] { width:80px; }
+  .muted { color:var(--muted); font-size:14px; }
+  .status { min-height:1.5em; margin-top:8px; }
+  .status.error { color:#d70015; }
+  details summary { cursor:pointer; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <nav>
+    <button data-tab="form" class="active">Form</button>
+    <button data-tab="history">History</button>
+    <button data-tab="chart">Chart</button>
+  </nav>
+
+  <section id="tab-form" class="tab active">
+    <details id="token-box" class="card">
+      <summary>GitHub token</summary>
+      <p class="muted">このrepoのContents(Read and write)だけを許可したfine-grained tokenを貼ってください。この端末のブラウザにだけ保存されます。</p>
+      <div class="row">
+        <input id="token-input" type="password" placeholder="github_pat_..." style="flex:1">
+        <button id="token-save">保存</button>
+      </div>
+    </details>
+
+    <div class="row">
+      <input id="date" type="date">
+    </div>
+    <div id="exercise-blocks"></div>
+    <button id="add-exercise">＋ 種目を追加</button>
+    <p><textarea id="day-note" rows="3" placeholder="その日のメモ"></textarea></p>
+    <button id="save" class="primary">保存</button>
+    <div id="form-status" class="status"></div>
+  </section>
+
+  <section id="tab-history" class="tab">
+    <div class="row">
+      <select id="history-filter"><option value="">すべての種目</option></select>
+    </div>
+    <div id="history-list"></div>
+  </section>
+
+  <section id="tab-chart" class="tab">
+    <div class="row">
+      <select id="chart-exercise"></select>
+      <select id="chart-metric">
+        <option value="maxKg">最大重量</option>
+        <option value="volume">総ボリューム</option>
+        <option value="est1rm">推定1RM</option>
+        <option value="totalReps">総回数</option>
+      </select>
+    </div>
+    <canvas id="chart-canvas"></canvas>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const REPO = { owner: "KaitoKurokochi", name: "training_note", branch: "master" };
+const LOG_PATH = "data/log.json";
+const EXERCISES_PATH = "data/exercises.json";
+const TOKEN_KEY = "training_note_token";
+const NEW_EXERCISE_OPTION = "__new__";
+
+// ---------- storage (token) ----------
+function readToken() {
+  try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; }
+}
+function writeToken(token) {
+  try { localStorage.setItem(TOKEN_KEY, token); } catch { /* storage unavailable */ }
+}
+
+// ---------- GitHub API (I/O only) ----------
+function apiUrl(path) {
+  return `https://api.github.com/repos/${REPO.owner}/${REPO.name}/contents/${path}`;
+}
+function apiHeaders() {
+  const headers = { Accept: "application/vnd.github+json" };
+  const token = readToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+function decodeBase64Utf8(b64) {
+  const bytes = Uint8Array.from(atob(b64.replace(/\n/g, "")), c => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+function encodeBase64Utf8(text) {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin);
+}
+async function fetchJsonFile(path) {
+  const res = await fetch(`${apiUrl(path)}?ref=${REPO.branch}`, { headers: apiHeaders(), cache: "no-store" });
+  if (!res.ok) throw new Error(`${path} の取得に失敗 (${res.status})`);
+  const body = await res.json();
+  return { data: JSON.parse(decodeBase64Utf8(body.content)), sha: body.sha };
+}
+async function putJsonFile(path, data, sha, message) {
+  const res = await fetch(apiUrl(path), {
+    method: "PUT",
+    headers: { ...apiHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message,
+      content: encodeBase64Utf8(JSON.stringify(data, null, 2) + "\n"),
+      sha,
+      branch: REPO.branch,
+    }),
+  });
+  if (!res.ok) throw new Error(`${path} の保存に失敗 (${res.status})`);
+}
+
+// ---------- logic (pure) ----------
+function estimateOneRepMax(kg, reps) {
+  return kg * (1 + reps / 30);
+}
+function summarizeSets(sets) {
+  const weighted = sets.filter(s => s.kg != null);
+  return {
+    maxKg: weighted.length ? Math.max(...weighted.map(s => s.kg)) : null,
+    volume: weighted.reduce((sum, s) => sum + s.kg * s.reps, 0),
+    est1rm: weighted.length ? Math.max(...weighted.map(s => estimateOneRepMax(s.kg, s.reps))) : null,
+    totalReps: sets.reduce((sum, s) => sum + s.reps, 0),
+  };
+}
+function mergeEntry(entries, newEntry) {
+  const existing = entries.find(e => e.date === newEntry.date);
+  if (!existing) return [...entries, newEntry].sort((a, b) => a.date.localeCompare(b.date));
+  const merged = {
+    date: existing.date,
+    exercises: [...existing.exercises, ...newEntry.exercises],
+    note: [existing.note, newEntry.note].filter(Boolean).join("\n"),
+  };
+  return entries.map(e => (e.date === newEntry.date ? merged : e));
+}
+function formatSets(sets) {
+  const parts = [];
+  let i = 0;
+  while (i < sets.length) {
+    const kg = sets[i].kg;
+    const reps = [];
+    while (i < sets.length && sets[i].kg === kg) reps.push(sets[i++].reps);
+    parts.push(`${kg != null ? kg + "kg " : ""}${reps.join(", ")}`);
+  }
+  return parts.join(" / ");
+}
+function seriesFor(entries, exerciseName, metric) {
+  const points = [];
+  for (const entry of entries) {
+    const sets = entry.exercises.filter(x => x.name === exerciseName).flatMap(x => x.sets);
+    if (!sets.length) continue;
+    const value = summarizeSets(sets)[metric];
+    if (value != null) points.push({ x: entry.date, y: Math.round(value * 10) / 10 });
+  }
+  return points;
+}
+
+// ---------- state ----------
+const state = { entries: [], logSha: null, exercises: [], exercisesSha: null, chart: null };
+
+const $ = id => document.getElementById(id);
+function setStatus(text, isError = false) {
+  const el = $("form-status");
+  el.textContent = text;
+  el.classList.toggle("error", isError);
+}
+function todayString() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// ---------- form ----------
+function exerciseSelectHtml() {
+  const options = state.exercises.map(n => `<option>${n}</option>`).join("");
+  return `<select class="ex-name">${options}<option value="${NEW_EXERCISE_OPTION}">＋ 新しい種目を追加</option></select>
+          <input class="ex-new" placeholder="新しい種目名" hidden>`;
+}
+function setRowHtml(kg = "", reps = "") {
+  return `<div class="row set">
+    <input type="number" class="kg" step="0.5" placeholder="kg" value="${kg}">
+    <input type="number" class="reps" placeholder="回数" value="${reps}">
+    <button type="button" class="remove-set">×</button>
+  </div>`;
+}
+function addSetRow(block, copyLast) {
+  const rows = block.querySelectorAll(".set");
+  const last = rows[rows.length - 1];
+  const kg = copyLast && last ? last.querySelector(".kg").value : "";
+  const reps = copyLast && last ? last.querySelector(".reps").value : "";
+  block.querySelector(".sets").insertAdjacentHTML("beforeend", setRowHtml(kg, reps));
+}
+function addExerciseBlock() {
+  const block = document.createElement("div");
+  block.className = "card exercise";
+  block.innerHTML = `
+    <div class="row">${exerciseSelectHtml()}<button type="button" class="remove-ex">削除</button></div>
+    <div class="sets"></div>
+    <div class="row"><button type="button" class="add-set">＋ セット</button></div>
+    <textarea class="ex-note" rows="2" placeholder="種目メモ(意識したこと等)"></textarea>`;
+  $("exercise-blocks").appendChild(block);
+  addSetRow(block, false);
+}
+function readExerciseBlock(block) {
+  const select = block.querySelector(".ex-name");
+  const name = select.value === NEW_EXERCISE_OPTION ? block.querySelector(".ex-new").value.trim() : select.value;
+  const sets = [...block.querySelectorAll(".set")].map(row => {
+    const kg = row.querySelector(".kg").value;
+    const reps = row.querySelector(".reps").value;
+    return { kg: kg === "" ? null : Number(kg), reps: Number(reps) };
+  }).filter(s => s.reps > 0);
+  const note = block.querySelector(".ex-note").value.trim();
+  return { name, sets, ...(note && { note }) };
+}
+function readForm() {
+  const exercises = [...document.querySelectorAll(".exercise")].map(readExerciseBlock)
+    .filter(x => x.name && x.sets.length);
+  return { date: $("date").value, exercises, note: $("day-note").value.trim() };
+}
+
+async function saveForm() {
+  const entry = readForm();
+  if (!entry.date) return setStatus("日付を入力してください", true);
+  if (!entry.exercises.length && !entry.note) return setStatus("記録がありません", true);
+  if (!readToken()) return setStatus("先にGitHub tokenを保存してください", true);
+
+  setStatus("保存中...");
+  try {
+    const latestLog = await fetchJsonFile(LOG_PATH);
+    const mergedEntries = mergeEntry(latestLog.data.entries, entry);
+    await putJsonFile(LOG_PATH, { entries: mergedEntries }, latestLog.sha, `log: ${entry.date}`);
+
+    const newNames = entry.exercises.map(x => x.name).filter(n => !state.exercises.includes(n));
+    if (newNames.length) {
+      const latestExercises = await fetchJsonFile(EXERCISES_PATH);
+      const names = [...new Set([...latestExercises.data.exercises, ...newNames])];
+      await putJsonFile(EXERCISES_PATH, { exercises: names }, latestExercises.sha, "exercises: add");
+    }
+    await loadData();
+    resetForm();
+    setStatus("保存しました");
+  } catch (err) {
+    setStatus(err.message, true);
+  }
+}
+function resetForm() {
+  $("exercise-blocks").innerHTML = "";
+  $("day-note").value = "";
+  addExerciseBlock();
+}
+
+// ---------- history ----------
+function renderHistory() {
+  const filter = $("history-filter").value;
+  const entries = [...state.entries].reverse();
+  $("history-list").innerHTML = entries.map(entry => {
+    const exercises = entry.exercises.filter(x => !filter || x.name === filter);
+    if (filter && !exercises.length) return "";
+    const rows = exercises.map(x => `<div><strong>${x.name}</strong> ${formatSets(x.sets)}${x.note ? `<div class="muted">${x.note}</div>` : ""}</div>`).join("");
+    return `<div class="card"><div class="muted">${entry.date}</div>${rows}${entry.note ? `<div class="muted">${entry.note}</div>` : ""}</div>`;
+  }).join("") || `<p class="muted">記録がありません</p>`;
+}
+
+// ---------- chart ----------
+function renderChart() {
+  const name = $("chart-exercise").value;
+  const metric = $("chart-metric").value;
+  const points = seriesFor(state.entries, name, metric);
+  if (state.chart) state.chart.destroy();
+  state.chart = new Chart($("chart-canvas"), {
+    type: "line",
+    data: { labels: points.map(p => p.x), datasets: [{ label: `${name} / ${$("chart-metric").selectedOptions[0].text}`, data: points.map(p => p.y), tension: 0.2 }] },
+  });
+}
+
+// ---------- wiring ----------
+function renderExerciseSelectors() {
+  const options = state.exercises.map(n => `<option>${n}</option>`).join("");
+  $("history-filter").innerHTML = `<option value="">すべての種目</option>${options}`;
+  $("chart-exercise").innerHTML = options;
+}
+async function loadData() {
+  const [log, exercises] = await Promise.all([fetchJsonFile(LOG_PATH), fetchJsonFile(EXERCISES_PATH)]);
+  state.entries = log.data.entries;
+  state.logSha = log.sha;
+  state.exercises = exercises.data.exercises;
+  state.exercisesSha = exercises.sha;
+  renderExerciseSelectors();
+  renderHistory();
+  renderChart();
+}
+function showTab(name) {
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === `tab-${name}`));
+}
+
+document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
+$("add-exercise").addEventListener("click", addExerciseBlock);
+$("save").addEventListener("click", saveForm);
+$("token-save").addEventListener("click", () => {
+  writeToken($("token-input").value.trim());
+  $("token-input").value = "";
+  setStatus("tokenを保存しました");
+});
+$("history-filter").addEventListener("change", renderHistory);
+$("chart-exercise").addEventListener("change", renderChart);
+$("chart-metric").addEventListener("change", renderChart);
+$("exercise-blocks").addEventListener("click", e => {
+  const block = e.target.closest(".exercise");
+  if (!block) return;
+  if (e.target.classList.contains("add-set")) addSetRow(block, true);
+  if (e.target.classList.contains("remove-set")) e.target.closest(".set").remove();
+  if (e.target.classList.contains("remove-ex")) block.remove();
+});
+$("exercise-blocks").addEventListener("change", e => {
+  if (!e.target.classList.contains("ex-name")) return;
+  e.target.closest(".exercise").querySelector(".ex-new").hidden = e.target.value !== NEW_EXERCISE_OPTION;
+});
+
+$("date").value = todayString();
+$("token-box").open = !readToken();
+loadData().then(addExerciseBlock).catch(err => setStatus(err.message, true));
+</script>
+</body>
+</html>
