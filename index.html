@@ -11,18 +11,28 @@
   }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 -apple-system, "Hiragino Sans", sans-serif; }
-  main { max-width:720px; margin:0 auto; padding:16px; }
-  nav { display:flex; gap:8px; margin-bottom:16px; }
-  nav button { flex:1; }
-  button, input, select, textarea { font:inherit; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  main { max-width:720px; margin:0 auto; padding:16px 16px calc(88px + env(safe-area-inset-bottom)); }
+  nav { position:fixed; left:0; right:0; bottom:0; display:flex; background:var(--bg); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); }
+  nav button { flex:1; border:0; border-radius:0; background:transparent; color:var(--muted); padding:14px 0; }
+  nav button.active { color:var(--accent); font-weight:600; background:transparent; }
+  button, input, select, textarea { font:inherit; font-size:16px; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; min-height:44px; }
   button { cursor:pointer; }
-  button.active, button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary#save { width:100%; }
+  select { max-width:100%; }
   textarea { width:100%; resize:vertical; }
+  .gate { max-width:420px; margin:0 auto; padding:64px 16px; }
+  .gate input { width:100%; margin-bottom:12px; }
+  .gate button { width:100%; }
+  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+  .topbar button { min-height:36px; padding:4px 10px; font-size:14px; }
+  [hidden] { display:none !important; }
   .tab { display:none; }
   .tab.active { display:block; }
   .card { background:var(--card); border-radius:12px; padding:12px; margin-bottom:12px; }
   .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
-  .row input[type=number] { width:80px; }
+  .row input[type=number] { width:96px; }
+  .row .set-label { flex:0 0 auto; }
   .muted { color:var(--muted); font-size:14px; }
   .status { min-height:1.5em; margin-top:8px; }
   .status.error { color:#d70015; }
@@ -30,23 +40,26 @@
 </style>
 </head>
 <body>
-<main>
+<section id="gate" class="gate" hidden>
+  <h1>Training Note</h1>
+  <p class="muted">GitHubのtokenを入力してください。このrepoのContents(Read and write)だけを許可したfine-grained tokenです。この端末のブラウザにだけ保存されます。</p>
+  <input id="token-input" type="password" placeholder="github_pat_..." autocomplete="off">
+  <button id="token-connect" class="primary">接続</button>
+  <div id="gate-status" class="status"></div>
+</section>
+
+<main id="app" hidden>
+  <div class="topbar">
+    <strong>Training Note</strong>
+    <button id="token-clear">ログアウト</button>
+  </div>
   <nav>
-    <button data-tab="form" class="active">Form</button>
-    <button data-tab="history">History</button>
-    <button data-tab="chart">Chart</button>
+    <button data-tab="form" class="active">記録</button>
+    <button data-tab="history">履歴</button>
+    <button data-tab="chart">推移</button>
   </nav>
 
   <section id="tab-form" class="tab active">
-    <details id="token-box" class="card">
-      <summary>GitHub token</summary>
-      <p class="muted">このrepoのContents(Read and write)だけを許可したfine-grained tokenを貼ってください。この端末のブラウザにだけ保存されます。</p>
-      <div class="row">
-        <input id="token-input" type="password" placeholder="github_pat_..." style="flex:1">
-        <button id="token-save">保存</button>
-      </div>
-    </details>
-
     <div class="row">
       <input id="date" type="date">
     </div>
@@ -202,8 +215,8 @@ function exerciseSelectHtml() {
 }
 function setRowHtml(kg = "", reps = "") {
   return `<div class="row set">
-    <input type="number" class="kg" step="0.5" placeholder="kg" value="${kg}">
-    <input type="number" class="reps" placeholder="回数" value="${reps}">
+    <input type="number" class="kg" step="0.5" inputmode="decimal" placeholder="kg" value="${kg}">
+    <input type="number" class="reps" inputmode="numeric" placeholder="回数" value="${reps}">
     <button type="button" class="remove-set">×</button>
   </div>`;
 }
@@ -321,10 +334,10 @@ function showTab(name) {
 document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
 $("add-exercise").addEventListener("click", addExerciseBlock);
 $("save").addEventListener("click", saveForm);
-$("token-save").addEventListener("click", () => {
-  writeToken($("token-input").value.trim());
-  $("token-input").value = "";
-  setStatus("tokenを保存しました");
+$("token-connect").addEventListener("click", connectWithToken);
+$("token-clear").addEventListener("click", () => {
+  writeToken("");
+  showGate();
 });
 $("history-filter").addEventListener("change", renderHistory);
 $("chart-exercise").addEventListener("change", renderChart);
@@ -341,9 +354,43 @@ $("exercise-blocks").addEventListener("change", e => {
   e.target.closest(".exercise").querySelector(".ex-new").hidden = e.target.value !== NEW_EXERCISE_OPTION;
 });
 
-$("date").value = todayString();
-$("token-box").open = !readToken();
-loadData().then(addExerciseBlock).catch(err => setStatus(err.message, true));
+// ---------- gate ----------
+function showGate(message = "", isError = false) {
+  $("app").hidden = true;
+  $("gate").hidden = false;
+  $("gate-status").textContent = message;
+  $("gate-status").classList.toggle("error", isError);
+}
+async function hasPushAccess() {
+  const res = await fetch(`https://api.github.com/repos/${REPO.owner}/${REPO.name}`, { headers: apiHeaders() });
+  if (!res.ok) throw new Error(`認証に失敗しました (${res.status})`);
+  const repo = await res.json();
+  return Boolean(repo.permissions && repo.permissions.push);
+}
+async function openApp() {
+  $("gate").hidden = true;
+  $("app").hidden = false;
+  $("date").value = todayString();
+  $("exercise-blocks").innerHTML = "";
+  await loadData();
+  addExerciseBlock();
+}
+async function connectWithToken() {
+  const token = $("token-input").value.trim();
+  if (!token) return showGate("tokenを入力してください", true);
+  writeToken(token);
+  try {
+    if (!(await hasPushAccess())) throw new Error("このtokenには書き込み権限がありません");
+    $("token-input").value = "";
+    await openApp();
+  } catch (err) {
+    writeToken("");
+    showGate(err.message, true);
+  }
+}
+
+if (readToken()) openApp().catch(err => showGate(err.message, true));
+else showGate();
 </script>
 </body>
 </html>
