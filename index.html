@@ -37,7 +37,10 @@
   .row input[type=number] { width:64px; padding:12px 8px; text-align:center; }
   .row { column-gap:6px; }
   .unit { font-size:0.85rem; color:#8e8e93; margin-right:6px; }
-  .pill-btn.remove-set { padding:7px 12px; }
+  .row.set { flex-wrap:nowrap; }
+  .row.set input[type=number] { flex:1; width:auto; min-width:0; }
+  .unit { flex-shrink:0; }
+  .pill-btn.remove-set { padding:7px 12px; flex-shrink:0; }
   .muted { color:#8e8e93; font-size:0.78rem; }
   .card .muted { margin-top:4px; }
   .card .date { display:block; font-size:0.72rem; color:#8e8e93; margin-bottom:6px; }
