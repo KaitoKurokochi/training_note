@@ -21,7 +21,10 @@
 
   .panels { max-width:720px; margin:0 auto; padding:calc(64px + env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom)); }
   .tab { display:none; }
-  .tab.active { display:block; }
+  .tab.active { display:block; animation:slide-in .25s ease; }
+  .tab.active.from-left { animation-name:slide-in-left; }
+  @keyframes slide-in { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:none; } }
+  @keyframes slide-in-left { from { opacity:0; transform:translateX(-40px); } to { opacity:1; transform:none; } }
 
   input, select, textarea, button { font:inherit; font-size:1rem; color:inherit; }
   input, select, textarea { background:#fff; border:1px solid #d1d1d6; border-radius:10px; padding:12px 14px; min-height:44px; }
@@ -31,7 +34,10 @@
   .section-title { font-size:0.72rem; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; }
   .card { background:#fff; border-radius:12px; padding:12px 14px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
   .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
-  .row input[type=number] { width:96px; }
+  .row input[type=number] { width:64px; padding:12px 8px; text-align:center; }
+  .row { column-gap:6px; }
+  .unit { font-size:0.85rem; color:#8e8e93; margin-right:6px; }
+  .pill-btn.remove-set { padding:7px 12px; }
   .muted { color:#8e8e93; font-size:0.78rem; }
   .card .muted { margin-top:4px; }
   .card .date { display:block; font-size:0.72rem; color:#8e8e93; margin-bottom:6px; }
@@ -40,7 +46,6 @@
   .pill-btn.danger { color:#ff3b30; }
   .submit-btn { width:100%; padding:14px; margin-top:12px; background:#007aff; color:#fff; border:none; border-radius:12px; font-weight:600; cursor:pointer; transition:opacity .15s; }
   .submit-btn:active { opacity:0.75; }
-  .link-btn { display:block; margin:24px auto 0; background:none; border:none; color:#8e8e93; font-size:0.85rem; cursor:pointer; }
 
   .status { font-size:0.85rem; text-align:center; min-height:20px; margin-top:8px; color:#34c759; }
   .status.error { color:#ff3b30; }
@@ -78,7 +83,6 @@
     <p><textarea id="day-note" rows="3" placeholder="その日のメモ"></textarea></p>
     <button id="save" class="submit-btn">保存</button>
     <div id="form-status" class="status"></div>
-    <button id="token-clear" class="link-btn">ログアウト</button>
   </section>
 
   <section id="tab-history" class="tab">
@@ -229,10 +233,11 @@ function exerciseSelectHtml() {
   return `<select class="ex-name">${options}<option value="${NEW_EXERCISE_OPTION}">＋ 新しい種目を追加</option></select>
           <input class="ex-new" placeholder="新しい種目名" hidden>`;
 }
-function setRowHtml(kg = "", reps = "") {
+function setRowHtml(kg = "", reps = "", setCount = 1) {
   return `<div class="row set">
-    <input type="number" class="kg" step="0.5" inputmode="decimal" placeholder="kg" value="${kg}">
-    <input type="number" class="reps" inputmode="numeric" placeholder="回数" value="${reps}">
+    <input type="number" class="kg" step="0.5" inputmode="decimal" value="${kg}"><span class="unit">kg</span>
+    <input type="number" class="reps" inputmode="numeric" value="${reps}"><span class="unit">回</span>
+    <input type="number" class="set-count" inputmode="numeric" min="1" value="${setCount}"><span class="unit">セット</span>
     <button type="button" class="pill-btn danger remove-set">×</button>
   </div>`;
 }
@@ -257,11 +262,13 @@ function addExerciseBlock() {
 function readExerciseBlock(block) {
   const select = block.querySelector(".ex-name");
   const name = select.value === NEW_EXERCISE_OPTION ? block.querySelector(".ex-new").value.trim() : select.value;
-  const sets = [...block.querySelectorAll(".set")].map(row => {
+  const sets = [...block.querySelectorAll(".set")].flatMap(row => {
     const kg = row.querySelector(".kg").value;
-    const reps = row.querySelector(".reps").value;
-    return { kg: kg === "" ? null : Number(kg), reps: Number(reps) };
-  }).filter(s => s.reps > 0);
+    const reps = Number(row.querySelector(".reps").value);
+    const setCount = Math.max(1, Number(row.querySelector(".set-count").value) || 1);
+    if (reps <= 0) return [];
+    return Array.from({ length: setCount }, () => ({ kg: kg === "" ? null : Number(kg), reps }));
+  });
   const note = block.querySelector(".ex-note").value.trim();
   return { name, sets, ...(note && { note }) };
 }
@@ -342,19 +349,41 @@ async function loadData() {
   renderHistory();
   renderChart();
 }
+const TAB_NAMES = ["form", "history", "chart"];
+let currentTabIndex = 0;
+
 function showTab(name) {
+  const index = TAB_NAMES.indexOf(name);
+  const direction = index >= currentTabIndex ? "from-right" : "from-left";
+  currentTabIndex = index;
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
-  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === `tab-${name}`));
+  document.querySelectorAll(".tab").forEach(t => {
+    t.classList.remove("from-right", "from-left");
+    const isTarget = t.id === `tab-${name}`;
+    t.classList.toggle("active", isTarget);
+    if (isTarget) t.classList.add(direction);
+  });
 }
+
+const SWIPE_MIN_DISTANCE_PX = 50;
+let swipeStart = null;
+document.addEventListener("touchstart", e => {
+  swipeStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: true });
+document.addEventListener("touchend", e => {
+  if (!swipeStart || $("app").hidden) return;
+  const dx = e.changedTouches[0].clientX - swipeStart.x;
+  const dy = e.changedTouches[0].clientY - swipeStart.y;
+  swipeStart = null;
+  if (Math.abs(dx) < SWIPE_MIN_DISTANCE_PX || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  const next = Math.min(Math.max(currentTabIndex + (dx < 0 ? 1 : -1), 0), TAB_NAMES.length - 1);
+  if (next !== currentTabIndex) showTab(TAB_NAMES[next]);
+}, { passive: true });
 
 document.querySelectorAll(".tab-btn").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
 $("add-exercise").addEventListener("click", addExerciseBlock);
 $("save").addEventListener("click", saveForm);
 $("token-connect").addEventListener("click", connectWithToken);
-$("token-clear").addEventListener("click", () => {
-  writeToken("");
-  showGate();
-});
 $("history-filter").addEventListener("change", renderHistory);
 $("chart-exercise").addEventListener("change", renderChart);
 $("chart-metric").addEventListener("change", renderChart);
