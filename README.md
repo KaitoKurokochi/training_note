@@ -8,11 +8,13 @@ Personal training log. Static site on GitHub Pages: https://kaitokurokochi.githu
 
 ## Data
 
-- `data/log.json` — all entries
-- `data/exercises.json` — exercise names shown in the form dropdown
+Records live in the private `KaitoKurokochi/vault` repo, not here:
 
-Saving from the form commits these files through the GitHub API.
+- `health/training_note/log.json` — all entries
+- `health/training_note/exercises.json` — exercise names for the form dropdown
+
+Both are created on first save. The site reads and writes them through the GitHub Contents API, so this repo only holds the page code.
 
 ## Setup (once per device)
 
-Create a fine-grained personal access token limited to this repository with **Contents: Read and write**, then paste it into the Form tab. It is kept only in the browser's `localStorage`; never commit it.
+Create a fine-grained personal access token limited to `vault` with **Contents: Read and write**, then enter it on the first screen. It is kept only in the browser's `localStorage`; never commit it.

@@ -55,7 +55,7 @@
 <body>
 <section id="gate" class="gate" hidden>
   <h1>Training Note</h1>
-  <p class="muted">GitHubのtokenを入力してください。このrepoのContents(Read and write)だけを許可したfine-grained tokenです。この端末のブラウザにだけ保存されます。</p>
+  <p class="muted">GitHubのtokenを入力してください。vault repoのContents(Read and write)だけを許可したfine-grained tokenです。この端末のブラウザにだけ保存されます。</p>
   <input id="token-input" type="password" placeholder="github_pat_..." autocomplete="off">
   <button id="token-connect" class="submit-btn">接続</button>
   <div id="gate-status" class="status"></div>
@@ -105,9 +105,11 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
-const REPO = { owner: "KaitoKurokochi", name: "training_note", branch: "master" };
-const LOG_PATH = "data/log.json";
-const EXERCISES_PATH = "data/exercises.json";
+const REPO = { owner: "KaitoKurokochi", name: "vault", branch: "main" };
+const LOG_PATH = "health/training_note/log.json";
+const EXERCISES_PATH = "health/training_note/exercises.json";
+const EMPTY_LOG = { entries: [] };
+const DEFAULT_EXERCISES = { exercises: ["ベンチプレス", "腹筋ローラー", "インナートレーニング"] };
 const TOKEN_KEY = "training_note_token";
 const NEW_EXERCISE_OPTION = "__new__";
 
@@ -139,8 +141,10 @@ function encodeBase64Utf8(text) {
   bytes.forEach(b => { bin += String.fromCharCode(b); });
   return btoa(bin);
 }
-async function fetchJsonFile(path) {
+// A missing file yields `fallback` with sha null; the first save creates it.
+async function fetchJsonFile(path, fallback) {
   const res = await fetch(`${apiUrl(path)}?ref=${REPO.branch}`, { headers: apiHeaders(), cache: "no-store" });
+  if (res.status === 404) return { data: fallback, sha: null };
   if (!res.ok) throw new Error(`${path} の取得に失敗 (${res.status})`);
   const body = await res.json();
   return { data: JSON.parse(decodeBase64Utf8(body.content)), sha: body.sha };
@@ -152,7 +156,7 @@ async function putJsonFile(path, data, sha, message) {
     body: JSON.stringify({
       message,
       content: encodeBase64Utf8(JSON.stringify(data, null, 2) + "\n"),
-      sha,
+      ...(sha && { sha }),
       branch: REPO.branch,
     }),
   });
@@ -275,13 +279,13 @@ async function saveForm() {
 
   setStatus("保存中...");
   try {
-    const latestLog = await fetchJsonFile(LOG_PATH);
+    const latestLog = await fetchJsonFile(LOG_PATH, EMPTY_LOG);
     const mergedEntries = mergeEntry(latestLog.data.entries, entry);
     await putJsonFile(LOG_PATH, { entries: mergedEntries }, latestLog.sha, `log: ${entry.date}`);
 
     const newNames = entry.exercises.map(x => x.name).filter(n => !state.exercises.includes(n));
     if (newNames.length) {
-      const latestExercises = await fetchJsonFile(EXERCISES_PATH);
+      const latestExercises = await fetchJsonFile(EXERCISES_PATH, DEFAULT_EXERCISES);
       const names = [...new Set([...latestExercises.data.exercises, ...newNames])];
       await putJsonFile(EXERCISES_PATH, { exercises: names }, latestExercises.sha, "exercises: add");
     }
@@ -329,7 +333,7 @@ function renderExerciseSelectors() {
   $("chart-exercise").innerHTML = options;
 }
 async function loadData() {
-  const [log, exercises] = await Promise.all([fetchJsonFile(LOG_PATH), fetchJsonFile(EXERCISES_PATH)]);
+  const [log, exercises] = await Promise.all([fetchJsonFile(LOG_PATH, EMPTY_LOG), fetchJsonFile(EXERCISES_PATH, DEFAULT_EXERCISES)]);
   state.entries = log.data.entries;
   state.logSha = log.sha;
   state.exercises = exercises.data.exercises;
